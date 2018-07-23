@@ -1,4 +1,5 @@
 SET default_storage_engine=InnoDB;
+BEGIN;
 -- Set storage engine schema version number
 UPDATE ezsite_data SET value='7.2.0' WHERE name='ezpublish-version';
 
@@ -70,3 +71,50 @@ ALTER TABLE `ezurlalias` ADD KEY `ezurlalias_desturl` (`destination_url` (191));
 
 ALTER TABLE `ezurlalias` DROP KEY `ezurlalias_source_url`;
 ALTER TABLE `ezurlalias` ADD KEY `ezurlalias_source_url` (`source_url` (191));
+
+--
+-- EZP-29146: As a developer, I want a API to manage bookmarks
+--
+
+ALTER TABLE `ezcontentbrowsebookmark`
+ADD INDEX `ezcontentbrowsebookmark_user_location` (`node_id`, `user_id`);
+
+ALTER TABLE `ezcontentbrowsebookmark`
+ADD INDEX `ezcontentbrowsebookmark_location` (`node_id`);
+
+ALTER TABLE `ezcontentbrowsebookmark`
+ADD CONSTRAINT `ezcontentbrowsebookmark_location_fk`
+  FOREIGN KEY (`node_id`)
+  REFERENCES `ezcontentobject_tree` (`node_id`)
+  ON DELETE CASCADE
+  ON UPDATE NO ACTION;
+
+ALTER TABLE `ezcontentbrowsebookmark`
+ADD CONSTRAINT `ezcontentbrowsebookmark_user_fk`
+  FOREIGN KEY (`user_id`)
+  REFERENCES `ezuser` (`contentobject_id`)
+  ON DELETE CASCADE
+  ON UPDATE NO ACTION;
+
+--
+-- EZEE-2081: Move NotificationBundle into AdminUI
+--
+
+CREATE TABLE IF NOT EXISTS `eznotification` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `owner_id` int(11) NOT NULL DEFAULT 0,
+  `is_pending` tinyint(1) NOT NULL DEFAULT '1',
+  `type` varchar(128) NOT NULL DEFAULT '',
+  `created` int(11) NOT NULL DEFAULT 0,
+  `data` blob,
+  PRIMARY KEY (`id`),
+  KEY `eznotification_owner` (`owner_id`),
+  KEY `eznotification_owner_is_pending` (`owner_id`, `is_pending`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+COMMIT;
+
+-- If the queries below fail, it means database is already updated
+
+CREATE INDEX `ezcontentobject_tree_contentobject_id_path_string` ON `ezcontentobject_tree` (`path_string`, `contentobject_id`);
+CREATE INDEX `ezcontentobject_section` ON `ezcontentobject` (`section_id`);

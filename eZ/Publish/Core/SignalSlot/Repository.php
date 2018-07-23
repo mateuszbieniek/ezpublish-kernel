@@ -11,6 +11,7 @@ use eZ\Publish\API\Repository\Repository as RepositoryInterface;
 use eZ\Publish\API\Repository\Values\ValueObject;
 use eZ\Publish\API\Repository\Values\User\UserReference;
 use eZ\Publish\SPI\Persistence\TransactionHandler;
+use Closure;
 
 /**
  * Repository class.
@@ -137,6 +138,13 @@ class Repository implements RepositoryInterface
     protected $bookmarkService;
 
     /**
+     * Instance of Notification service.
+     *
+     * @var \eZ\Publish\API\Repository\NotificationService
+     */
+    protected $notificationService;
+
+    /**
      * Constructor.
      *
      * Construct repository object from aggregated repository and signal
@@ -158,7 +166,8 @@ class Repository implements RepositoryInterface
      * @param \eZ\Publish\Core\SignalSlot\LocationService $locationService
      * @param \eZ\Publish\Core\SignalSlot\LanguageService $languageService
      * @param \eZ\Publish\Core\SignalSlot\URLService $urlService
-     * @param \eZ\Publish\Core\SignalSlot\BookmarkService bookmarkService
+     * @param \eZ\Publish\Core\SignalSlot\BookmarkService $bookmarkService
+     * @param \eZ\Publish\API\Repository\NotificationService $notificationService
      */
     public function __construct(
         RepositoryInterface $repository,
@@ -177,7 +186,8 @@ class Repository implements RepositoryInterface
         LocationService $locationService,
         LanguageService $languageService,
         URLService $urlService,
-        BookmarkService $bookmarkService
+        BookmarkService $bookmarkService,
+        NotificationService $notificationService
     ) {
         $this->signalDispatcher = $signalDispatcher;
         $this->repository = $repository;
@@ -196,6 +206,7 @@ class Repository implements RepositoryInterface
         $this->languageService = $languageService;
         $this->urlService = $urlService;
         $this->bookmarkService = $bookmarkService;
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -250,15 +261,16 @@ class Repository implements RepositoryInterface
      *
      *
      * @param \Closure $callback
+     * @param \eZ\Publish\API\Repository\Repository|null $outerRepository
      *
      * @throws \RuntimeException Thrown on recursive sudo() use.
      * @throws \Exception Re throws exceptions thrown inside $callback
      *
      * @return mixed
      */
-    public function sudo(\Closure $callback)
+    public function sudo(Closure $callback, RepositoryInterface $outerRepository = null)
     {
-        return $this->repository->sudo($callback, $this);
+        return $this->repository->sudo($callback, $outerRepository ?? $this);
     }
 
     /**
@@ -426,6 +438,16 @@ class Repository implements RepositoryInterface
     public function getBookmarkService()
     {
         return $this->bookmarkService;
+    }
+
+    /**
+     * Get NotificationService.
+     *
+     * @return \eZ\Publish\API\Repository\NotificationService
+     */
+    public function getNotificationService()
+    {
+        return $this->notificationService;
     }
 
     /**

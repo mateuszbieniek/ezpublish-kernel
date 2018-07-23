@@ -464,6 +464,53 @@ class LocationServiceTest extends BaseTest
             $location->contentInfo
         );
         $this->assertEquals($this->generateId('object', 4), $location->contentInfo->id);
+
+        // Check lazy loaded proxy on ->content
+        $this->assertInstanceOf(
+            Content::class,
+            $content = $location->getContent()
+        );
+        $this->assertEquals(4, $content->contentInfo->id);
+    }
+
+    public function testLoadLocationPrioritizedLanguagesFallback()
+    {
+        $repository = $this->getRepository();
+
+        // Add a language
+        $languageService = $repository->getContentLanguageService();
+        $languageStruct = $languageService->newLanguageCreateStruct();
+        $languageStruct->name = 'Norsk';
+        $languageStruct->languageCode = 'nor-NO';
+        $languageService->createLanguage($languageStruct);
+
+        $locationService = $repository->getLocationService();
+        $contentService = $repository->getContentService();
+        $location = $locationService->loadLocation(5);
+
+        // Translate "Users"
+        $draft = $contentService->createContentDraft($location->contentInfo);
+        $struct = $contentService->newContentUpdateStruct();
+        $struct->setField('name', 'Brukere', 'nor-NO');
+        $draft = $contentService->updateContent($draft->getVersionInfo(), $struct);
+        $contentService->publishVersion($draft->getVersionInfo());
+
+        // Load with prioritc language (fallback will be the old one)
+        $location = $locationService->loadLocation(5, ['nor-NO']);
+
+        $this->assertInstanceOf(
+            Location::class,
+            $location
+        );
+        self::assertEquals(5, $location->id);
+        $this->assertInstanceOf(
+            Content::class,
+            $content = $location->getContent()
+        );
+        $this->assertEquals(4, $content->contentInfo->id);
+
+        $this->assertEquals($content->getVersionInfo()->getName(), 'Brukere');
+        $this->assertEquals($content->getVersionInfo()->getName('eng-US'), 'Users');
     }
 
     /**
@@ -1672,6 +1719,39 @@ class LocationServiceTest extends BaseTest
     }
 
     /**
+     * Test for the deleteLocation() method.
+     *
+     * @covers  \eZ\Publish\API\Repository\LocationService::deleteLocation()
+     * @depends eZ\Publish\API\Repository\Tests\LocationServiceTest::testDeleteLocation
+     */
+    public function testDeleteLocationDeletesRelatedBookmarks()
+    {
+        $repository = $this->getRepository();
+
+        $parentLocationId = $this->generateId('location', 43);
+        $childLocationId = $this->generateId('location', 53);
+
+        /* BEGIN: Use Case */
+        $locationService = $repository->getLocationService();
+        $bookmarkService = $repository->getBookmarkService();
+
+        // Load location
+        $childLocation = $locationService->loadLocation($childLocationId);
+        // Add location to bookmarks
+        $bookmarkService->createBookmark($childLocation);
+        // Load parent location
+        $parentLocation = $locationService->loadLocation($parentLocationId);
+        // Delete parent location
+        $locationService->deleteLocation($parentLocation);
+        /* END: Use Case */
+
+        // Location isn't bookmarked anymore
+        foreach ($bookmarkService->loadBookmarks(0, 9999) as $bookmarkedLocation) {
+            $this->assertNotEquals($childLocation->id, $bookmarkedLocation->id);
+        }
+    }
+
+    /**
      * Test for the copySubtree() method.
      *
      * @see \eZ\Publish\API\Repository\LocationService::copySubtree()
@@ -1715,7 +1795,7 @@ class LocationServiceTest extends BaseTest
             array(
                 'depth' => $newParentLocation->depth + 1,
                 'parentLocationId' => $newParentLocation->id,
-                'pathString' => "{$newParentLocation->pathString}" . $this->parseId('location', $copiedLocation->id) . '/',
+                'pathString' => $newParentLocation->pathString . $this->parseId('location', $copiedLocation->id) . '/',
             ),
             $copiedLocation
         );
@@ -1844,7 +1924,7 @@ class LocationServiceTest extends BaseTest
         foreach ($actual as $properties) {
             $this->assertNotContains($properties['id'], $beforeIds);
             $this->assertStringStartsWith(
-                "{$newParentLocation->pathString}" . $this->parseId('location', $copiedLocation->id) . '/',
+                $newParentLocation->pathString . $this->parseId('location', $copiedLocation->id) . '/',
                 $properties['pathString']
             );
             $this->assertStringEndsWith(
@@ -1978,7 +2058,7 @@ class LocationServiceTest extends BaseTest
                 'invisible' => false,
                 'depth' => $newParentLocation->depth + 1,
                 'parentLocationId' => $newParentLocation->id,
-                'pathString' => "{$newParentLocation->pathString}" . $this->parseId('location', $movedLocation->id) . '/',
+                'pathString' => $newParentLocation->pathString . $this->parseId('location', $movedLocation->id) . '/',
             ),
             $movedLocation
         );
@@ -2031,7 +2111,7 @@ class LocationServiceTest extends BaseTest
                 'invisible' => true,
                 'depth' => $newParentLocation->depth + 1,
                 'parentLocationId' => $newParentLocation->id,
-                'pathString' => "{$newParentLocation->pathString}" . $this->parseId('location', $movedLocation->id) . '/',
+                'pathString' => $newParentLocation->pathString . $this->parseId('location', $movedLocation->id) . '/',
             ),
             $movedLocation
         );
@@ -2057,7 +2137,7 @@ class LocationServiceTest extends BaseTest
             $expected[$id]['depth'] = $properties['depth'] + 2;
             $expected[$id]['pathString'] = str_replace(
                 $locationToMove->pathString,
-                "{$newParentLocation->pathString}" . $this->parseId('location', $locationToMove->id) . '/',
+                $newParentLocation->pathString . $this->parseId('location', $locationToMove->id) . '/',
                 $properties['pathString']
             );
         }
@@ -2122,7 +2202,7 @@ class LocationServiceTest extends BaseTest
             $expected[$id]['depth'] = $properties['depth'] + 2;
             $expected[$id]['pathString'] = str_replace(
                 $locationToMove->pathString,
-                "{$newParentLocation->pathString}" . $this->parseId('location', $locationToMove->id) . '/',
+                $newParentLocation->pathString . $this->parseId('location', $locationToMove->id) . '/',
                 $properties['pathString']
             );
         }

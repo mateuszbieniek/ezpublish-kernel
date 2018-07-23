@@ -10,6 +10,7 @@ namespace eZ\Publish\Core\Persistence\Cache;
 
 use eZ\Publish\API\Repository\Values\Content\Relation as APIRelation;
 use eZ\Publish\SPI\Persistence\Content\Handler as ContentHandlerInterface;
+use eZ\Publish\SPI\Persistence\Content;
 use eZ\Publish\SPI\Persistence\Content\VersionInfo;
 use eZ\Publish\SPI\Persistence\Content\ContentInfo;
 use eZ\Publish\SPI\Persistence\Content\CreateStruct;
@@ -42,7 +43,7 @@ class ContentHandler extends AbstractHandler implements ContentHandlerInterface
     {
         $this->logger->logCall(__METHOD__, array('content' => $contentId, 'version' => $srcVersion, 'user' => $userId));
         $draft = $this->persistenceHandler->contentHandler()->createDraftFromVersion($contentId, $srcVersion, $userId);
-        $this->cache->invalidateTags(["content-$contentId-version-list"]);
+        $this->cache->invalidateTags(["content-{$contentId}-version-list"]);
 
         return $draft;
     }
@@ -71,10 +72,44 @@ class ContentHandler extends AbstractHandler implements ContentHandlerInterface
         $this->logger->logCall(__METHOD__, array('content' => $contentId, 'version' => $versionNo, 'translations' => $translations));
         $content = $this->persistenceHandler->contentHandler()->load($contentId, $versionNo, $translations);
         $cacheItem->set($content);
-        $cacheItem->tag($this->getCacheTags($content->versionInfo->contentInfo, true));
+        $cacheItem->tag($this->getCacheTagsForContent($content));
         $this->cache->save($cacheItem);
 
         return $content;
+    }
+
+    public function loadContentList(array $contentLoadStructs): array
+    {
+        // Extract id's and make key suffix for each one (handling undefined versionNo and languages)
+        $contentIds = [];
+        $keySuffixes = [];
+        foreach ($contentLoadStructs as $struct) {
+            $contentIds[] = $struct->id;
+            $keySuffixes[$struct->id] = ($struct->versionNo ? "-{$struct->versionNo}-" : '-') .
+                (empty($struct->languages) ? self::ALL_TRANSLATIONS_KEY : implode('|', $struct->languages));
+        }
+
+        return $this->getMultipleCacheItems(
+            $contentIds,
+            'ez-content-',
+            function (array $cacheMissIds) use ($contentLoadStructs) {
+                $this->logger->logCall(__CLASS__ . '::loadContentList', ['content' => $cacheMissIds]);
+
+                $filteredStructs = [];
+                /* @var $contentLoadStructs \eZ\Publish\SPI\Persistence\Content\LoadStruct[] */
+                foreach ($contentLoadStructs as $struct) {
+                    if (in_array($struct->id, $cacheMissIds)) {
+                        $filteredStructs[] = $struct;
+                    }
+                }
+
+                return $this->persistenceHandler->contentHandler()->loadContentList($filteredStructs);
+            },
+            function (Content $content) {
+                return $this->getCacheTagsForContent($content);
+            },
+            $keySuffixes
+        );
     }
 
     /**
@@ -144,7 +179,7 @@ class ContentHandler extends AbstractHandler implements ContentHandlerInterface
         $this->logger->logCall(__METHOD__, ['content' => $contentId, 'version' => $versionNo]);
         $versionInfo = $this->persistenceHandler->contentHandler()->loadVersionInfo($contentId, $versionNo);
         $cacheItem->set($versionInfo);
-        $cacheItem->tag($this->getCacheTags($versionInfo->contentInfo));
+        $cacheItem->tag($this->getCacheTagsForVersion($versionInfo));
         $this->cache->save($cacheItem);
 
         return $versionInfo;
@@ -168,11 +203,10 @@ class ContentHandler extends AbstractHandler implements ContentHandlerInterface
         $this->logger->logCall(__METHOD__, array('content' => $contentId, 'status' => $status, 'version' => $versionNo));
         $return = $this->persistenceHandler->contentHandler()->setStatus($contentId, $status, $versionNo);
 
-        $this->cache->deleteItem("ez-content-version-info-${contentId}-${versionNo}");
         if ($status === VersionInfo::STATUS_PUBLISHED) {
             $this->cache->invalidateTags(['content-' . $contentId]);
         } else {
-            $this->cache->invalidateTags(["content-$contentId-version-list"]);
+            $this->cache->invalidateTags(["content-{$contentId}-version-{$versionNo}"]);
         }
 
         return $return;
@@ -197,7 +231,7 @@ class ContentHandler extends AbstractHandler implements ContentHandlerInterface
     {
         $this->logger->logCall(__METHOD__, array('content' => $contentId, 'version' => $versionNo, 'struct' => $struct));
         $content = $this->persistenceHandler->contentHandler()->updateContent($contentId, $versionNo, $struct);
-        $this->cache->invalidateTags(['content-' . $contentId]);
+        $this->cache->invalidateTags(["content-{$contentId}-version-{$versionNo}"]);
 
         return $content;
     }
@@ -240,7 +274,7 @@ class ContentHandler extends AbstractHandler implements ContentHandlerInterface
     {
         $this->logger->logCall(__METHOD__, array('content' => $contentId, 'version' => $versionNo));
         $return = $this->persistenceHandler->contentHandler()->deleteVersion($contentId, $versionNo);
-        $this->cache->invalidateTags(['content-' . $contentId]);
+        $this->cache->invalidateTags(["content-{$contentId}-version-{$versionNo}"]);
 
         return $return;
     }
@@ -258,8 +292,11 @@ class ContentHandler extends AbstractHandler implements ContentHandlerInterface
         $this->logger->logCall(__METHOD__, array('content' => $contentId, 'status' => $status));
         $versions = $this->persistenceHandler->contentHandler()->listVersions($contentId, $status, $limit);
         $cacheItem->set($versions);
-        $tags = ["content-$contentId", "content-$contentId-version-list"];
-        $cacheItem->tag(empty($versions) ? $tags : $this->getCacheTags($versions[0]->contentInfo, false, $tags));
+        $tags = ["content-{$contentId}", "content-{$contentId}-version-list"];
+        foreach ($versions as $version) {
+            $tags = $this->getCacheTagsForVersion($version, $tags);
+        }
+        $cacheItem->tag($tags);
         $this->cache->save($cacheItem);
 
         return $versions;
@@ -362,7 +399,7 @@ class ContentHandler extends AbstractHandler implements ContentHandlerInterface
             $versionNo,
             $languageCode
         );
-        $this->cache->invalidateTags(['content-' . $contentId]);
+        $this->cache->invalidateTags(["content-{$contentId}-version-{$versionNo}"]);
 
         return $content;
     }
@@ -373,19 +410,13 @@ class ContentHandler extends AbstractHandler implements ContentHandlerInterface
      * For use when generating cache, not on invalidation.
      *
      * @param \eZ\Publish\SPI\Persistence\Content\ContentInfo $contentInfo
-     * @param bool $withFields Set to true if item contains fields which should be expired on relation or type updates.
      * @param array $tags Optional, can be used to specify other tags.
      *
      * @return array
      */
-    private function getCacheTags(ContentInfo $contentInfo, $withFields = false, array $tags = [])
+    private function getCacheTags(ContentInfo $contentInfo, array $tags = [])
     {
         $tags[] = 'content-' . $contentInfo->id;
-
-        if ($withFields) {
-            $tags[] = 'content-fields-' . $contentInfo->id;
-            $tags[] = 'content-fields-type-' . $contentInfo->contentTypeId;
-        }
 
         if ($contentInfo->mainLocationId) {
             $locations = $this->persistenceHandler->locationHandler()->loadLocationsByContent($contentInfo->id);
@@ -398,5 +429,24 @@ class ContentHandler extends AbstractHandler implements ContentHandlerInterface
         }
 
         return array_unique($tags);
+    }
+
+    private function getCacheTagsForVersion(VersionInfo $versionInfo, array $tags = [])
+    {
+        $contentInfo = $versionInfo->contentInfo;
+        $tags[] = 'content-' . $contentInfo->id . '-version-' . $versionInfo->versionNo;
+
+        return $this->getCacheTags($contentInfo, $tags);
+    }
+
+    private function getCacheTagsForContent(Content $content)
+    {
+        $versionInfo = $content->versionInfo;
+        $tags = [
+            'content-fields-' . $versionInfo->contentInfo->id,
+            'content-fields-type-' . $versionInfo->contentInfo->contentTypeId,
+        ];
+
+        return $this->getCacheTagsForVersion($versionInfo, $tags);
     }
 }

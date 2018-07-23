@@ -19,8 +19,10 @@ use eZ\Publish\Core\Repository\Values\User\UserReference;
 use eZ\Publish\Core\Search\Common\BackgroundIndexer;
 use eZ\Publish\SPI\Persistence\Handler as PersistenceHandler;
 use eZ\Publish\SPI\Search\Handler as SearchHandler;
+use Closure;
 use Exception;
 use RuntimeException;
+use eZ\Publish\API\Repository\NotificationService as NotificationServiceInterface;
 
 /**
  * Repository class.
@@ -193,6 +195,13 @@ class Repository implements RepositoryInterface
     protected $bookmarkService;
 
     /**
+     * Instance of Notification service.
+     *
+     * @var \eZ\Publish\API\Repository\NotificationService
+     */
+    protected $notificationService;
+
+    /**
      * Service settings, first level key is service name.
      *
      * @var array
@@ -232,9 +241,7 @@ class Repository implements RepositoryInterface
      */
     protected $permissionsHandler;
 
-    /**
-     * @var \eZ\Publish\Core\Search\Common\BackgroundIndexer|null
-     */
+    /** @var \eZ\Publish\Core\Search\Common\BackgroundIndexer|null */
     protected $backgroundIndexer;
 
     /**
@@ -371,19 +378,16 @@ class Repository implements RepositoryInterface
      *
      *
      * @param \Closure $callback
-     * @param \eZ\Publish\API\Repository\Repository $outerRepository
+     * @param \eZ\Publish\API\Repository\Repository|null $outerRepository
      *
      * @throws \RuntimeException Thrown on recursive sudo() use.
      * @throws \Exception Re throws exceptions thrown inside $callback
      *
      * @return mixed
      */
-    public function sudo(\Closure $callback, RepositoryInterface $outerRepository = null)
+    public function sudo(Closure $callback, RepositoryInterface $outerRepository = null)
     {
-        return $this->getPermissionResolver()->sudo(
-            $callback,
-            $outerRepository !== null ? $outerRepository : $this
-        );
+        return $this->getPermissionResolver()->sudo($callback, $outerRepository ?? $this);
     }
 
     /**
@@ -858,6 +862,23 @@ class Repository implements RepositoryInterface
         );
 
         return $this->nameSchemaService;
+    }
+
+    /**
+     * @return \eZ\Publish\API\Repository\NotificationService
+     */
+    public function getNotificationService(): NotificationServiceInterface
+    {
+        if (null !== $this->notificationService) {
+            return $this->notificationService;
+        }
+
+        $this->notificationService = new NotificationService(
+            $this->persistenceHandler->notificationHandler(),
+            $this->getPermissionResolver()
+        );
+
+        return $this->notificationService;
     }
 
     /**

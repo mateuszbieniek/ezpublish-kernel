@@ -91,6 +91,14 @@ CREATE TABLE ezcontent_language (
     name character varying(255) DEFAULT ''::character varying NOT NULL
 );
 
+DROP TABLE IF EXISTS ezcontentbrowsebookmark;
+CREATE TABLE ezcontentbrowsebookmark (
+  id SERIAL,
+  name character varying(255) DEFAULT ''::character varying NOT NULL,
+  node_id integer DEFAULT 0 NOT NULL,
+  user_id integer DEFAULT 0 NOT NULL
+);
+
 DROP TABLE IF EXISTS ezcontentclass;
 CREATE TABLE ezcontentclass (
     always_available integer DEFAULT 0 NOT NULL,
@@ -474,12 +482,14 @@ CREATE TABLE ezkeyword_attribute_link (
   objectattribute_id integer DEFAULT 0 NOT NULL
 );
 
-DROP TABLE IF EXISTS ezcontentbrowsebookmark;
-CREATE TABLE ezcontentbrowsebookmark (
-  id SERIAL,
-  name character varying(255) DEFAULT ''::character varying NOT NULL,
-  node_id integer DEFAULT 0 NOT NULL,
-  user_id integer DEFAULT 0 NOT NULL
+DROP TABLE IF EXISTS eznotification;
+CREATE TABLE eznotification (
+    id SERIAL,
+    owner_id integer DEFAULT 0 NOT NULL ,
+    is_pending integer DEFAULT 1 NOT NULL,
+    type character varying(128) NOT NULL,
+    created integer DEFAULT 0 NOT NULL,
+    data text
 );
 
 CREATE INDEX ezimagefile_coid ON ezimagefile USING btree (contentobject_attribute_id);
@@ -519,6 +529,8 @@ CREATE INDEX ezcontentobject_pub ON ezcontentobject USING btree (published);
 CREATE UNIQUE INDEX ezcontentobject_remote_id ON ezcontentobject USING btree (remote_id);
 
 CREATE INDEX ezcontentobject_status ON ezcontentobject USING btree (status);
+
+CREATE INDEX ezcontentobject_section ON ezcontentobject USING btree (section_id);
 
 CREATE INDEX ezcontentobject_attribute_co_id_ver_lang_code ON ezcontentobject_attribute USING btree (contentobject_id, "version", language_code);
 
@@ -563,6 +575,8 @@ CREATE INDEX ezcontentobject_tree_p_node_id ON ezcontentobject_tree USING btree 
 CREATE INDEX ezcontentobject_tree_path ON ezcontentobject_tree USING btree (path_string);
 
 CREATE INDEX ezcontentobject_tree_path_ident ON ezcontentobject_tree USING btree (path_identification_string);
+
+CREATE INDEX ezcontentobject_tree_contentobject_id_path_string ON ezcontentobject_tree USING btree (path_string, contentobject_id);
 
 CREATE INDEX modified_subnode ON ezcontentobject_tree USING btree (modified_subnode);
 
@@ -659,6 +673,14 @@ CREATE INDEX ezkeyword_attr_link_oaid ON ezkeyword_attribute_link USING btree (o
 CREATE INDEX ezuser_accountkey_hash_key ON ezuser_accountkey USING btree (hash_key);
 
 CREATE INDEX ezcontentbrowsebookmark_user ON ezcontentbrowsebookmark USING btree (user_id);
+
+CREATE INDEX ezcontentbrowsebookmark_location ON ezcontentbrowsebookmark USING btree (node_id);
+
+CREATE INDEX ezcontentbrowsebookmark_user_location ON ezcontentbrowsebookmark USING btree (user_id, node_id);
+
+CREATE INDEX eznotification_owner_id ON eznotification USING btree (owner_id);
+
+CREATE INDEX eznotification_owner_id_is_pending ON eznotification USING btree (owner_id, is_pending);
 
 ALTER TABLE ONLY ezcobj_state
     ADD CONSTRAINT ezcobj_state_pkey PRIMARY KEY (id);
@@ -788,3 +810,20 @@ ALTER TABLE ONLY ezkeyword_attribute_link
 
 ALTER TABLE ONLY ezcontentbrowsebookmark
     ADD CONSTRAINT ezcontentbrowsebookmark_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY eznotification
+  ADD CONSTRAINT eznotification_pkey PRIMARY KEY (id);
+
+ALTER TABLE ezcontentbrowsebookmark
+ADD CONSTRAINT ezcontentbrowsebookmark_location_fk
+  FOREIGN KEY (node_id)
+  REFERENCES ezcontentobject_tree (node_id)
+  ON DELETE CASCADE
+  ON UPDATE NO ACTION;
+
+ALTER TABLE ezcontentbrowsebookmark
+ADD CONSTRAINT ezcontentbrowsebookmark_user_fk
+  FOREIGN KEY (user_id)
+  REFERENCES ezuser (contentobject_id)
+  ON DELETE CASCADE
+  ON UPDATE NO ACTION;

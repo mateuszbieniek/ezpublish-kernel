@@ -98,6 +98,18 @@ CREATE TABLE ezcontent_language (
   KEY ezcontent_language_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS ezcontentbrowsebookmark;
+CREATE TABLE ezcontentbrowsebookmark (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  name varchar(255) NOT NULL DEFAULT '',
+  node_id int(11) NOT NULL DEFAULT '0',
+  user_id int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (id),
+  KEY `ezcontentbrowsebookmark_user` (`user_id`),
+  KEY `ezcontentbrowsebookmark_location` (`node_id`),
+  KEY `ezcontentbrowsebookmark_user_location` (`user_id`, `node_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 DROP TABLE IF EXISTS ezcontentclass;
 CREATE TABLE ezcontentclass (
   always_available int(11) NOT NULL DEFAULT 0,
@@ -207,7 +219,8 @@ CREATE TABLE ezcontentobject (
   KEY ezcontentobject_owner (owner_id),
   KEY ezcontentobject_pub (published),
   UNIQUE KEY ezcontentobject_remote_id (remote_id),
-  KEY ezcontentobject_status (status)
+  KEY ezcontentobject_status (status),
+  KEY ezcontentobject_section (section_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 DROP TABLE IF EXISTS ezcontentobject_attribute;
@@ -311,7 +324,8 @@ CREATE TABLE ezcontentobject_tree (
   KEY ezcontentobject_tree_p_node_id (parent_node_id),
   KEY ezcontentobject_tree_path (path_string),
   KEY ezcontentobject_tree_path_ident (path_identification_string(50)),
-  KEY modified_subnode (modified_subnode)
+  KEY modified_subnode (modified_subnode),
+  KEY ezcontentobject_tree_contentobject_id_path_string (path_string, contentobject_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 DROP TABLE IF EXISTS ezcontentobject_version;
@@ -602,12 +616,29 @@ CREATE TABLE ezgmaplocation (
   KEY latitude_longitude_key (latitude,longitude)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-DROP TABLE IF EXISTS ezcontentbrowsebookmark;
-CREATE TABLE ezcontentbrowsebookmark (
-  id int(11) NOT NULL AUTO_INCREMENT,
-  name varchar(255) NOT NULL DEFAULT '',
-  node_id int(11) NOT NULL DEFAULT '0',
-  user_id int(11) NOT NULL DEFAULT '0',
-  PRIMARY KEY (id),
-  KEY ezcontentbrowsebookmark_user (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE `ezcontentbrowsebookmark`
+ADD CONSTRAINT `ezcontentbrowsebookmark_location_fk`
+  FOREIGN KEY (`node_id`)
+  REFERENCES `ezcontentobject_tree` (`node_id`)
+  ON DELETE CASCADE
+  ON UPDATE NO ACTION;
+
+ALTER TABLE `ezcontentbrowsebookmark`
+ADD CONSTRAINT `ezcontentbrowsebookmark_user_fk`
+  FOREIGN KEY (`user_id`)
+  REFERENCES `ezuser` (`contentobject_id`)
+  ON DELETE CASCADE
+  ON UPDATE NO ACTION;
+
+DROP TABLE IF EXISTS `eznotification`;
+CREATE TABLE `eznotification` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `owner_id` int(11) NOT NULL DEFAULT 0,
+  `is_pending` tinyint(1) NOT NULL DEFAULT '1',
+  `type` varchar(128) NOT NULL DEFAULT '',
+  `created` int(11) NOT NULL DEFAULT 0,
+  `data` blob,
+  PRIMARY KEY (`id`),
+  KEY `eznotification_owner` (`owner_id`),
+  KEY `eznotification_owner_is_pending` (`owner_id`, `is_pending`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;

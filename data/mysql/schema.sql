@@ -453,7 +453,9 @@ CREATE TABLE `ezcontentbrowsebookmark` (
   `node_id` int(11) NOT NULL DEFAULT '0',
   `user_id` int(11) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
-  KEY `ezcontentbrowsebookmark_user` (`user_id`)
+  KEY `ezcontentbrowsebookmark_user` (`user_id`),
+  KEY `ezcontentbrowsebookmark_location` (`node_id`),
+  KEY `ezcontentbrowsebookmark_user_location` (`user_id`, `node_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -625,7 +627,8 @@ CREATE TABLE `ezcontentobject` (
   KEY `ezcontentobject_lmask` (`language_mask`),
   KEY `ezcontentobject_owner` (`owner_id`),
   KEY `ezcontentobject_pub` (`published`),
-  KEY `ezcontentobject_status` (`status`)
+  KEY `ezcontentobject_status` (`status`),
+  KEY `ezcontentobject_section` (`section_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -764,7 +767,8 @@ CREATE TABLE `ezcontentobject_tree` (
   KEY `ezcontentobject_tree_p_node_id` (`parent_node_id`),
   KEY `ezcontentobject_tree_path` (`path_string` (191)),
   KEY `ezcontentobject_tree_path_ident` (`path_identification_string`(50)),
-  KEY `modified_subnode` (`modified_subnode`)
+  KEY `modified_subnode` (`modified_subnode`),
+  KEY `ezcontentobject_tree_contentobject_id_path_string` (`path_string`, `contentobject_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -2537,6 +2541,37 @@ CREATE TABLE `ezworkflow_process` (
   PRIMARY KEY (`id`),
   KEY `ezworkflow_process_process_key` (`process_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE `ezcontentbrowsebookmark`
+ADD CONSTRAINT `ezcontentbrowsebookmark_location_fk`
+  FOREIGN KEY (`node_id`)
+  REFERENCES `ezcontentobject_tree` (`node_id`)
+  ON DELETE CASCADE
+  ON UPDATE NO ACTION;
+
+ALTER TABLE `ezcontentbrowsebookmark`
+ADD CONSTRAINT `ezcontentbrowsebookmark_user_fk`
+  FOREIGN KEY (`user_id`)
+  REFERENCES `ezuser` (`contentobject_id`)
+  ON DELETE CASCADE
+  ON UPDATE NO ACTION;
+
+--
+-- Table structure for table `eznotification`
+--
+DROP TABLE IF EXISTS `eznotification`;
+CREATE TABLE `eznotification` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `owner_id` int(11) NOT NULL DEFAULT 0,
+  `is_pending` tinyint(1) NOT NULL DEFAULT '1',
+  `type` varchar(128) NOT NULL DEFAULT '',
+  `created` int(11) NOT NULL DEFAULT 0,
+  `data` blob,
+  PRIMARY KEY (`id`),
+  KEY `eznotification_owner` (`owner_id`),
+  KEY `eznotification_owner_is_pending` (`owner_id`, `is_pending`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
