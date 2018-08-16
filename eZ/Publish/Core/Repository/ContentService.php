@@ -516,7 +516,7 @@ class ContentService implements ContentServiceInterface
             $contentCreateStruct->remoteId = $this->domainMapper->getUniqueHash($contentCreateStruct);
         }
 
-        $spiLocationCreateStructs = $this->buildSPILocationCreateStructs($locationCreateStructs);
+        $spiLocationCreateStructs = $this->buildSPILocationCreateStructs($locationCreateStructs, $contentCreateStruct->contentType);
 
         $languageCodes = $this->getLanguageCodesForCreate($contentCreateStruct);
         $fields = $this->mapFieldsForCreate($contentCreateStruct);
@@ -781,16 +781,22 @@ class ContentService implements ContentServiceInterface
      * @throws \eZ\Publish\API\Repository\Exceptions\InvalidArgumentException
      *
      * @param \eZ\Publish\API\Repository\Values\Content\LocationCreateStruct[] $locationCreateStructs
+     * @param \eZ\Publish\API\Repository\Values\ContentType\ContentType|null
      *
      * @return \eZ\Publish\SPI\Persistence\Content\Location\CreateStruct[]
      */
-    protected function buildSPILocationCreateStructs(array $locationCreateStructs)
+    protected function buildSPILocationCreateStructs(array $locationCreateStructs, ContentType $contentType = null)
     {
         $spiLocationCreateStructs = array();
         $parentLocationIdSet = array();
         $mainLocation = true;
 
         foreach ($locationCreateStructs as $locationCreateStruct) {
+            if ($contentType) {
+                $locationCreateStruct->sortField = $contentType->defaultSortField;
+                $locationCreateStruct->sortOrder = $contentType->defaultSortOrder;
+            }
+            
             if (isset($parentLocationIdSet[$locationCreateStruct->parentLocationId])) {
                 throw new InvalidArgumentException(
                     '$locationCreateStructs',
